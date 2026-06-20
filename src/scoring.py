@@ -10,8 +10,8 @@ def align_to_pharmacophore(mol, interaction_sites, feature_map):
     total_score = 0.0
     
     for site in interaction_sites:
-        site_type = site['type']
-        site_coords = np.array(site['coords'])
+        site_type = site.get('family')
+        site_coords = np.array([site.get('x'), site.get('y'), site.get('z')])
         
         matching_indices = feature_map.get(site_type, [])
         if not matching_indices:
@@ -34,7 +34,7 @@ def check_clashes(mol, excluded_volumes):
     tolerance = 0.1
     
     for volume in excluded_volumes:
-        vol_coords = np.array(volume['coords'])
+        vol_coords = np.array([volume.get('x'), volume.get('y'), volume.get('z')])
         vol_radius = volume.get('radius', 1.2)
         
         for atom_idx in range(mol.GetNumAtoms()):

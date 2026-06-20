@@ -1,6 +1,7 @@
 """
 Parse SMILES strings to extract atom-level chemical features (donor, acceptor, hydrophobe, aromatic).
 """
+from rdkit import Chem
 
 def extract_atom_features(mol):
     """
@@ -16,7 +17,8 @@ def extract_atom_features(mol):
             continue
             
         if atom.GetSymbol() in ('O', 'N'):
-            if atom.GetExplicitValence() < atom.GetTotalValence() or atom.GetNumH() > 0:
+            # Use GetValence(Chem.ValenceType.EXPLICIT) to avoid deprecation warnings
+            if atom.GetValence(Chem.ValenceType.EXPLICIT) < atom.GetTotalValence() or atom.GetTotalNumHs() > 0:
                 features.append((idx, 'Donor'))
             
             features.append((idx, 'Acceptor'))
