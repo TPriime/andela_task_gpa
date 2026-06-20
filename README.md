@@ -64,6 +64,24 @@ You can specify custom paths for the input targets file and the output SDF file 
 ./gpa -t "./data/custom_targets.json" -o "./results/my_docking_results.sdf"
 ```
 
+### Running directly with docker
+
+For the most minimal setup, you can run the entire pipeline directly using the built image without relying on the local `./gpa` script. This command mounts the current directory (`$(pwd)`) into the container and executes the main Python script:
+
+```bash
+docker run --rm -v "$(pwd)":/app -w /app gpa-image
+```
+
+Full example:
+
+```
+docker run --rm \
+  -v "$(pwd)":/app \
+  -w /app gpa-image \
+  -u $(id -u):$(id -g)
+  -t "./path/to/your/targets.json" -o "./path/to/your/output.sdf"
+```
+
 ## Implementation Details
 
 The pipeline consists of several modules:
