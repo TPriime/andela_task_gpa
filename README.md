@@ -82,7 +82,21 @@ docker run --rm \
   -t "./path/to/your/targets.json" -o "./path/to/your/output.sdf"
 ```
 
+---
+
+### Development testing via docker
+
+```
+docker run --rm -v "$(pwd)":/app -w /app --entrypoint python3 gpa-image -m unittest tests/*.py;
+```
+
 ## Implementation Details
+
+This section provides a detailed explanation of the algorithm used to align small molecules to pharmacophore interaction sites and exclusion volumes.
+
+### 1. Overview
+
+The core objective is to find a 3D pose for each molecule that maximizes its alignment with a set of predefined pharmacophore features while strictly avoiding steric clashes with exclusion spheres.
 
 The pipeline consists of several modules:
 
@@ -93,7 +107,7 @@ The pipeline consists of several modules:
 - `src/output.py`: Generates the final SDF output file.
 - `src/main.py`: Orchestrates the entire pipeline.
 
-## Project Structure
+#### Project Structure
 
 - `data/`: Contains input data (`targets.json`).
 - `results/`: Output directory for generated `.sdf` files.
@@ -101,3 +115,55 @@ The pipeline consists of several modules:
 - `tests/`: Unit tests for the various modules.
 - `Dockerfile`: Docker configuration for the environment.
 - `./gpa`: Bash wrapper for running the containerized application.
+
+### 2. Step-by-Step Process
+
+#### A. Conformer Generation
+
+For each target molecule (provided as a SMILES string):
+
+1.  **SMILES Parsing**: The SMILES string is parsed into an RDKit molecule object.
+2.  **3D Embedding**: Multiple 3D conformers are generated using RDKit's `AllChem.EmbedMultipleConfs`.
+3.  **Geometry Optimization**: Each conformer undergoes energy minimization using the Universal Force Field (UFF) or Merck Molecular Force Field (MMFF) to ensure realistic bond lengths and angles.
+
+#### B. Chemical Feature Extraction
+
+For each generated conformer, we identify atoms that correspond to the pharmacophore feature families:
+
+- **Donor**: Atoms capable of donating a hydrogen bond.
+- **Acceptor**: Atoms capable of accepting a hydrogen bond.
+  _Note: The implementation prioritizes extraction based on prevalence (Acceptor > Aromatic > Hydrophobe >> Donor) as identified during data analysis._
+
+#### C. Pharmacophore Scoring
+
+Each conformer is evaluated against the interaction sites defined in `targets.json`. For each site $i$:
+
+1.  Identify all atoms in the molecule that belong to the same feature family as site $i$.
+2.  Calculate the distance $d_{i,j}$ from site $i$ to each matching atom $j$.
+3.  Find the minimum distance: $d_i = \min(d_{i,j})$.
+4.  Compute the contribution of site $i$ using the Gaussian scoring function:
+    $$score_i = w_i \cdot \exp\left(-\left(\frac{d_i}{1.25}\right)^2\right)$$
+    where $w_i$ is the weight of the site.
+5.  The total score for the conformer is the sum of all site contributions:
+    $$Score_{total} = \sum_{i} score_i$$
+
+#### D. Steric Clash Detection
+
+A pose is considered invalid if any atom in the molecule enters an exclusion volume.
+
+- **Exclusion Volume**: A sphere defined by a center $(x, y, z)$ and a radius of $1.2\text{ \AA}$.
+- **Tolerance**: An additional tolerance of $0.1\text{ \AA}$ is applied.
+- **Condition**: If the distance from any atom to an exclusion center is less than $1.3\text{ \AA}$ ($1.2 + 0.1$), the pose is rejected.
+
+#### E. Pose Selection
+
+After scoring and filtering:
+
+1.  All conformers that passed the clash detection are considered "valid".
+2.  From the valid set, the conformer with the highest total score is selected as the best pose for that target.
+3.  If no conformers pass the clash detection, the target is skipped or an error is reported.
+
+### 3. Complexity and Performance
+
+- **Time Complexity**: Primarily driven by the number of conformers generated and the number of atoms/sites to check. The scoring is $O(N_{atoms} \cdot N_{sites})$.
+- **Space Complexity**: $O(N_{conformers} \cdot N_{atoms})$ to store all generated poses before selection.
