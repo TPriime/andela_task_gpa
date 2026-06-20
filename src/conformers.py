@@ -1,31 +1,49 @@
 from rdkit import Chem
 from rdkit.Chem import AllChem, rdMolDescriptors
 
-
-def generate_conformers(smiles: str, max_confs: int = 10) -> list[Chem.Mol]:
-    """Generate 3D conformers from SMILES using ETKDGv3."""
-    
+def generate_conformers(smiles: str, max_confs: int = 200) -> list[Chem.Mol]:
+    """Generate 3D conformers from SMILES using ETKDGv3 and MMFF optimization."""
     mol = Chem.MolFromSmiles(smiles)
     if not mol:
         raise ValueError(f"Invalid SMILES string")
 
+    # Attach Hydrogen atoms
     mol_h = Chem.AddHs(mol)
+    
+    # Use ETKDGv3 (the best) for initial embeddings and fallback on failure 
+    # to others: with random coordinates, ETKDGv2, basic
     params = AllChem.ETKDGv3()
+    params.randomSeed = 42
+    params.numThreads = 0
     
-    conformers = []
-    for _ in range(min(max_confs * 2, 50)):
-        conf_id = AllChem.EmbedMolecule(mol_h, params=params)
-        
-        if conf_id == -1:
-            continue
-        
-        uff_result = AllChem.UFFOptimizeMolecule(mol_h, maxIters=200)
-        
-        if uff_result == 0 and len(conformers) < max_confs:
-            conformers.append(Chem.RemoveHs(mol_h))
+    num_confs = AllChem.EmbedMultipleConfs(mol_h, numConfs=50, params=params)
     
-    return conformers
+    if num_confs == 0:
+        params.randomCoords = True
+        num_confs = AllChem.EmbedMultipleConfs(mol_h, numConfs=max_confs, params=params)
 
+    if num_confs == 0:
+        params_v2 = AllChem.ETKDGv2()
+        params_v2.randomCoords = True
+        num_confs = AllChem.EmbedMultipleConfs(mol_h, numConfs=max_confs, params=params_v2)
+
+    # If still no conformers, try a very basic embedding
+    if num_confs == 0:
+        AllChem.EmbedMolecule(mol_h, randomCoord=True)
+        num_confs = mol_h.GetNumConformers()
+    
+    AllChem.MMFFOptimizeMoleculeConfs(mol_h, numThreads=0)
+
+   # Extract optimized conformers and remove Hydrogen atoms for final output 
+    conformers = []
+    for i in range(mol_h.GetNumConformers()):
+        conf_mol = Chem.Mol(mol_h)
+        conf = mol_h.GetConformer(i)
+        new_conf = Chem.Conformer(conf)
+        conf_mol.AddConformer(new_conf)
+        conformers.append(Chem.RemoveHs(conf_mol))
+            
+    return conformers[:max_confs]
 
 def get_molecular_weight(smiles: str):
     mol = Chem.MolFromSmiles(smiles)

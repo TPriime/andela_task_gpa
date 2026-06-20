@@ -18,6 +18,7 @@ def process_targets(targets_path, output_path):
         targets_data = json.load(f)
 
     best_poses = []
+    best_scores = []
 
     for target_id, target in targets_data.items():
         smiles = target.get('smiles')
@@ -27,34 +28,37 @@ def process_targets(targets_path, output_path):
         if not smiles:
             continue
 
-        print(f"Processing {target_id}: {smiles}")
+        print(f"\nProcessing {target_id}: {smiles}")
         
         try:
-            # 1. Generate conformers
+            # Generate conformers
             poses = generate_conformers(smiles)
             
             if not poses:
                 print(f"  No valid conformers generated for {smiles}")
                 continue
                 
-            # 2. Extract chemical features (using the first pose as reference for topology)
+            # Extract chemical features using the first pose
             feature_map = get_feature_map(poses[0])
             
-            # 3. Select best pose based on alignment and clashes
+            # Select best pose based on alignment and clashes
             best_pose, score = select_best_pose(poses, interaction_sites, feature_map, excluded_volumes)
             
             if best_pose:
                 print(f"  Best pose found with score: {score:.4f}")
                 best_poses.append(best_pose)
+                best_scores.append(score)
             else:
                 print(f"  No valid pose surviving clash detection for {smiles}")
                 
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             print(f"  Error processing {smiles}: {e}")
 
-    # 4. Write results to SDF
+    # Write results to SDF
     if best_poses:
-        write_sdf(best_poses, output_path)
+        write_sdf(best_poses, best_scores, output_path)
         print(f"\nSuccessfully wrote {len(best_poses)} poses to {output_path}")
     else:
         print("\nNo valid poses found for any target.")
@@ -66,7 +70,6 @@ def main():
     
     args = parser.parse_args()
     
-    # Ensure output directory exists
     output_dir = os.path.dirname(args.output)
     if output_dir and not os.path.exists(output_dir):
         os.makedirs(output_dir)

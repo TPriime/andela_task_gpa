@@ -1,48 +1,39 @@
 """
 Parse SMILES strings to extract atom-level chemical features (donor, acceptor, hydrophobe, aromatic).
 """
-from rdkit import Chem
+from rdkit import Chem, RDConfig
+from rdkit.Chem import ChemicalFeatures
+import os
+
+_FDEF_PATH = os.path.join(RDConfig.RDDataDir, "BaseFeatures.fdef")
+_FACTORY = ChemicalFeatures.BuildFeatureFactory(_FDEF_PATH)
+
+_RDKIT_TO_TASK = {
+    "Donor":          "Donor",
+    "Acceptor":       "Acceptor",
+    "Hydrophobe":     "Hydrophobe",
+    "LumpedHydrophobe": "Hydrophobe",
+    "Aromatic":       "Aromatic",
+}
 
 def extract_atom_features(mol):
     """
     Extracts chemical features from a molecule to match pharmacophore sites.
     """
-    features = []
+    result = {f: set() for f in ("Donor", "Acceptor", "Hydrophobe", "Aromatic")}
+    for feat in _FACTORY.GetFeaturesForMol(mol):
+        task_fam = _RDKIT_TO_TASK.get(feat.GetFamily())
+        if task_fam is None:
+            continue
+        for idx in feat.GetAtomIds():
+            if mol.GetAtomWithIdx(idx).GetAtomicNum() != 1:
+                result[task_fam].add(idx)
     
-    for atom in mol.GetAtoms():
-        idx = atom.GetIdx()
-        
-        if atom.GetIsAromatic():
-            features.append((idx, 'Aromatic'))
-            continue
-            
-        if atom.GetSymbol() in ('O', 'N'):
-            # Use GetValence(Chem.ValenceType.EXPLICIT) to avoid deprecation warnings
-            if atom.GetValence(Chem.ValenceType.EXPLICIT) < atom.GetTotalValence() or atom.GetTotalNumHs() > 0:
-                features.append((idx, 'Donor'))
-            
-            features.append((idx, 'Acceptor'))
-            continue
-            
-        if atom.GetSymbol() == 'C' or atom.GetSymbol() in ('Cl', 'Br', 'I', 'F'):
-            features.append((idx, 'Hydrophobe'))
-            
-    return features
+    # Convert sets to sorted lists for consistency
+    return {k: sorted(list(v)) for k, v in result.items()}
 
 def get_feature_map(mol):
     """
     Returns a mapping of feature types to lists of atom indices.
     """
-    atom_features = extract_atom_features(mol)
-    feature_map = {
-        'Acceptor': [],
-        'Donor': [],
-        'Hydrophobe': [],
-        'Aromatic': []
-    }
-    
-    for idx, feat in atom_features:
-        if feat in feature_map:
-            feature_map[feat].append(idx)
-            
-    return feature_map
+    return extract_atom_features(mol)
