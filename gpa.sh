@@ -1,0 +1,70 @@
+#!/bin/bash
+
+set -e
+
+# Default values
+TARGETS_JSON="./data/targets.json"
+OUTPUT_SDF="./results/docked_poses.sdf"
+
+show_help() {
+    cat <<EOF
+Usage: $(basename "$0") [-t TARGETS_JSON] [-o OUTPUT_SDF]
+
+Options:
+  -t, --targets <path>  Path to targets.json (default: $TARGETS_JSON)
+  -o, --output <path>   Path for output .sdf file (default: $OUTPUT_SDF)
+  -h, --help            Show this help message
+
+Example:
+  $(basename "$0") -t "./data/targets.json" -o "./results/docked_poses.sdf"
+EOF
+}
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -t|--targets)
+            TARGETS_JSON="$2"
+            shift 2
+            ;;
+        -o|--output)
+            OUTPUT_SDF="$2"
+            shift 2
+            ;;
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            show_help
+            exit 1
+            ;;
+    esac
+done
+
+echo "Running GPA with targets: $TARGETS_JSON"
+echo "Output will be written to: $OUTPUT_SDF"
+echo ""
+
+image="gpa-image"
+
+# Check if docker image exists, build if not
+if ! docker image inspect $image >/dev/null 2>&1; then
+    echo "Docker image '$image' not found. Building it now..."
+    docker build -t $image .
+fi
+
+# Run the docker container
+# Ensure targets file is accessible if provided outside the workspace
+MOUNTS="-v $(pwd):/out"
+ABS_TARGETS_JSON=$(realpath "$TARGETS_JSON")
+MOUNTS="$MOUNTS -v $ABS_TARGETS_JSON:/targets.json:ro"
+TARGETS_JSON="/targets.json"
+
+docker run --rm \
+    $MOUNTS \
+    -u $(id -u):$(id -g) \
+    $image -t "$TARGETS_JSON" -o "/out/$OUTPUT_SDF"
+
+echo "Done!"
